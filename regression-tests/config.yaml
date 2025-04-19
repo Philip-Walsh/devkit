@@ -1,0 +1,65 @@
+# DevKit Regression Test Configuration
+
+# Registry configuration
+registry:
+  default: "localhost:5000"
+  production: "ghcr.io/philip-walsh/devkit"
+  staging: "registry.staging.example.com/devkit"
+
+# Test environments
+environments:
+  - name: development
+    description: "Local development environment"
+    skip_tests: ["production_integration"]
+    
+  - name: staging
+    description: "Staging environment for pre-release testing"
+    skip_tests: []
+    
+  - name: production
+    description: "Production environment for final verification"
+    skip_tests: []
+
+# Test suites
+test_suites:
+  - name: core_api
+    description: "Core API functionality tests"
+    command: "python -m pytest tests/core/ -v"
+    required: true
+    
+  - name: cli
+    description: "Command-line interface tests"
+    command: "python -m devkit.cli test"
+    required: true
+    
+  - name: compatibility
+    description: "Backward compatibility tests"
+    command: "python -m devkit.cli compatibility-check"
+    required: true
+    
+  - name: performance
+    description: "Performance benchmark tests"
+    command: "python -m devkit.cli benchmark"
+    required: false
+    
+  - name: integration
+    description: "Integration with external systems"
+    command: "python -m pytest tests/integration/ -v"
+    required: true
+    
+  - name: security
+    description: "Security and vulnerability tests"
+    command: "python -m devkit.cli security-scan"
+    required: true
+    
+  - name: production_integration
+    description: "Tests that require production credentials"
+    command: "python -m pytest tests/production/ -v"
+    required: false
+
+# Notification settings
+notifications:
+  slack_webhook: "https://hooks.slack.com/services/EXAMPLE"
+  email: "devops@example.com"
+  notify_on_success: false
+  notify_on_failure: true 

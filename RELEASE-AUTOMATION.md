@@ -14,7 +14,7 @@ This comprehensive script automates the entire release process in one go.
 
 **Usage:**
 ```bash
-./release.sh [version_type] [registry] [push_to_registry] [create_github_release]
+./release.sh [version_type] [registry] [push_to_registry] [create_github_release] [run_regression] [regression_env]
 ```
 
 **Arguments:**
@@ -22,14 +22,16 @@ This comprehensive script automates the entire release process in one go.
 - `registry`: The Docker registry to use. Defaults to "localhost:5000".
 - `push_to_registry`: Whether to push to the registry (true/false). Defaults to "true".
 - `create_github_release`: Whether to create a GitHub release (true/false). Defaults to "false".
+- `run_regression`: Whether to run regression tests (true/false). Defaults to "true".
+- `regression_env`: Environment for regression tests (development/staging/production). Defaults to "production".
 
 **Example:**
 ```bash
-# Create a minor release and push to a local registry
-./release.sh minor localhost:5000 true false
+# Create a minor release, push to registry, and run regression tests
+./release.sh minor localhost:5000 true false true production
 
-# Create a patch release and push to GitHub Container Registry
-./release.sh patch ghcr.io/philip-walsh/devkit true true
+# Create a patch release without regression tests
+./release.sh patch ghcr.io/philip-walsh/devkit true true false
 ```
 
 **Steps Performed:**
@@ -42,7 +44,8 @@ This comprehensive script automates the entire release process in one go.
 7. Commits all changes
 8. Pushes changes and tag to the repository
 9. Runs verification tests using test-release.sh
-10. Creates a GitHub release (if requested and GitHub CLI is installed)
+10. Runs comprehensive regression tests (if requested)
+11. Creates a GitHub release (if requested and GitHub CLI is installed)
 
 ### 2. `test-release.sh`
 
@@ -89,11 +92,39 @@ sudo ./setup-release-tools.sh
 - Kyverno CLI (for policy validation)
 - GitHub CLI (for GitHub releases)
 
+### 4. Regression Testing Framework
+
+The regression testing framework allows for comprehensive validation of releases in various environments.
+
+**Components:**
+- `regression-tests/regression-test.sh`: Main regression test script
+- `regression-tests/config.yaml`: Configuration for test environments and test suites
+- `regression-tests/setup-private-repo.sh`: Script to set up a private repository for testing
+
+**Usage:**
+```bash
+# Run regression tests with defaults
+./regression-tests/regression-test.sh
+
+# Run regression tests with specific parameters
+./regression-tests/regression-test.sh [registry] [version] [environment]
+```
+
+**Example:**
+```bash
+# Test version 1.0.7 in production environment
+./regression-tests/regression-test.sh localhost:5000 1.0.7 production
+```
+
 ## Workflow for Future Releases
 
 1. **Setup (first time only):**
    ```bash
+   # Install release tools
    sudo ./setup-release-tools.sh
+   
+   # Optional: Set up private regression testing repository
+   ./regression-tests/setup-private-repo.sh
    ```
 
 2. **Release Process:**
@@ -101,11 +132,8 @@ sudo ./setup-release-tools.sh
    # For testing locally
    docker run -d -p 5000:5000 --name registry registry:2
    
-   # Create a release
-   ./release.sh patch localhost:5000 true false
-   
-   # Verify the release
-   ./test-release.sh localhost:5000 <new_version>
+   # Create a release with regression testing
+   ./release.sh patch localhost:5000 true false true production
    ```
 
 3. **GitHub Release:**
@@ -118,6 +146,7 @@ sudo ./setup-release-tools.sh
 - **Error reduction**: Minimizes manual errors
 - **Documentation**: Automatically updates version information in documentation
 - **Verification**: Tests releases automatically to ensure they work properly
+- **Regression Testing**: Validates functionality across multiple environments
 
 ## Troubleshooting
 
@@ -127,4 +156,6 @@ If you encounter issues with the release process:
 2. Verify that Git credentials are configured correctly
 3. Ensure all required tools are installed (run setup-release-tools.sh)
 4. Check for errors in the CHANGELOG.md or RELEASES.md formatting
-5. Verify that the Docker image builds and tests correctly in isolation 
+5. Verify that the Docker image builds and tests correctly in isolation
+6. For regression test failures, check the test logs in regression-tests/results/
+7. Ensure the test environment configuration in config.yaml is correct 

@@ -9,11 +9,13 @@ VERSION_TYPE=${1:-"patch"}  # Default to patch release
 REGISTRY=${2:-"localhost:5000"}
 PUSH_TO_REGISTRY=${3:-"true"}
 CREATE_GITHUB_RELEASE=${4:-"false"}
+RUN_REGRESSION=${5:-"true"}
+REGRESSION_ENV=${6:-"production"}
 
 # Validate version type
 if [[ ! "$VERSION_TYPE" =~ ^(patch|minor|major)$ ]]; then
     echo "❌ Invalid version type: $VERSION_TYPE"
-    echo "Usage: $0 [patch|minor|major] [registry] [push_to_registry] [create_github_release]"
+    echo "Usage: $0 [patch|minor|major] [registry] [push_to_registry] [create_github_release] [run_regression] [regression_env]"
     exit 1
 fi
 
@@ -22,6 +24,8 @@ echo "Version Type: $VERSION_TYPE"
 echo "Registry: $REGISTRY"
 echo "Push to Registry: $PUSH_TO_REGISTRY"
 echo "Create GitHub Release: $CREATE_GITHUB_RELEASE"
+echo "Run Regression Tests: $RUN_REGRESSION"
+echo "Regression Test Environment: $REGRESSION_ENV"
 echo
 
 # Step 1: Bump the version
@@ -132,7 +136,7 @@ For future releases:
 ### Release Process Used
 \`\`\`bash
 # Generated with release.sh
-./release.sh $VERSION_TYPE $REGISTRY $PUSH_TO_REGISTRY $CREATE_GITHUB_RELEASE
+./release.sh $VERSION_TYPE $REGISTRY $PUSH_TO_REGISTRY $CREATE_GITHUB_RELEASE $RUN_REGRESSION $REGRESSION_ENV
 \`\`\`
 EOF
 
@@ -161,6 +165,20 @@ echo
 echo "Step 9: Running verification tests..."
 ./test-release.sh "$REGISTRY" "$NEW_VERSION"
 echo "✅ Release verification tests passed"
+echo
+
+# Step 8.5: Run regression tests if requested
+if [ "$RUN_REGRESSION" = "true" ] && [ -f "regression-tests/regression-test.sh" ]; then
+    echo "Step 8.5: Running regression tests..."
+    chmod +x regression-tests/regression-test.sh
+    ./regression-tests/regression-test.sh "$REGISTRY" "$NEW_VERSION" "$REGRESSION_ENV"
+    echo "✅ Regression tests passed"
+elif [ "$RUN_REGRESSION" = "true" ]; then
+    echo "Step 8.5: Skipping regression tests - regression-tests/regression-test.sh not found"
+    echo "⚠️ To enable regression testing, set up the regression testing framework"
+else
+    echo "Step 8.5: Skipping regression tests as requested"
+fi
 echo
 
 # Step 10: Create GitHub release if requested
@@ -192,6 +210,10 @@ echo "Next steps:"
 echo "1. Update CHANGELOG.md with the actual changes"
 echo "2. Update RELEASES.md with detailed information"
 echo "3. If not done automatically, create a GitHub release following GITHUB-RELEASE-INSTRUCTIONS.md"
+if [ "$RUN_REGRESSION" != "true" ] || [ ! -f "regression-tests/regression-test.sh" ]; then
+    echo "4. Consider running regression tests separately with:"
+    echo "   ./regression-tests/regression-test.sh $REGISTRY $NEW_VERSION production"
+fi
 echo
 
 exit 0 

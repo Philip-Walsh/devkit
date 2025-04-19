@@ -1,0 +1,81 @@
+name: DevKit Regression Tests
+
+on:
+  push:
+    branches: 
+      - main
+      - regression-testing
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'DevKit version to test'
+        required: false
+        default: 'latest'
+      environment:
+        description: 'Test environment'
+        required: false
+        default: 'development'
+        type: choice
+        options:
+          - development
+          - staging
+          - production
+
+jobs:
+  regression:
+    name: Run Regression Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v2
+        
+      - name: Set up local registry
+        run: |
+          docker run -d -p 5000:5000 --restart=always --name registry registry:2
+          
+      - name: Set test version
+        id: version
+        run: |
+          if [ "${{ github.event.inputs.version }}" != "" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=latest" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Set test environment
+        id: environment
+        run: |
+          if [ "${{ github.event.inputs.environment }}" != "" ]; then
+            echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
+          else
+            echo "environment=development" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Run setup script for release tools
+        run: |
+          sudo chmod +x ./setup-release-tools.sh
+          sudo ./setup-release-tools.sh
+          
+      - name: Run regression tests
+        run: |
+          chmod +x ./regression-tests/regression-test.sh
+          ./regression-tests/regression-test.sh localhost:5000 ${{ steps.version.outputs.version }} ${{ steps.environment.outputs.environment }}
+          
+      - name: Upload test results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: regression-test-results
+          path: regression-tests/results/
+          
+      - name: Notify on failure
+        if: ${{ failure() }}
+        run: |
+          echo "Regression tests failed for version ${{ steps.version.outputs.version }} in ${{ steps.environment.outputs.environment }} environment"
+          # Add notification logic here (e.g., Slack webhook, email) 
