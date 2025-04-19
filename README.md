@@ -15,6 +15,12 @@ A Python package providing development workflow automation and Git utility funct
 - Chainguard secure images integration
 - Docker image testing and security scanning
 
+## Documentation
+
+- [ABOUT.md](ABOUT.md) - CI/CD principles and best practices
+- [ROADMAP.md](ROADMAP.md) - Future development plans
+- [CHANGELOG.md](CHANGELOG.md) - Version history and changes
+
 ## Installation
 
 ### Install from PyPI (Coming soon)
