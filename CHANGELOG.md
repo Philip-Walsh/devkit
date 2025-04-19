@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.5] - 2023-09-15
+
+### Added
+- Optimized GitHub Actions workflow for free tier
+- Combined security check and build jobs for efficiency
+- Enhanced error handling in CI pipeline
+
+### Changed
+- Reduced artifact storage requirements
+- Improved Docker image scanning process
+- Streamlined release process
+
 ## [1.0.4] - 2023-09-01
 
 ### Added
@@ -64,7 +76,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Python package functionality
 - Security scanning
 
-[Unreleased]: https://github.com/philip-walsh/devkit/compare/v1.0.4...HEAD
+[Unreleased]: https://github.com/philip-walsh/devkit/compare/v1.0.5...HEAD
+[1.0.5]: https://github.com/philip-walsh/devkit/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/philip-walsh/devkit/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/philip-walsh/devkit/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/philip-walsh/devkit/compare/v1.0.1...v1.0.2
