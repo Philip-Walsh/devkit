@@ -1,38 +1,58 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+All notable changes to DevKit will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [1.0.0] - 2025-04-18
+## [1.0.3] - 2023-09-01
+
 ### Added
-- Initial release of Git Utilities
-- Basic commit message validation
-- Git hook management
-- Basic Git utilities
-- Core package structure
-- Basic CI/CD integration
+- Improved repository structure with GitHub templates
+- SECURITY.md with security policy
+- CHANGELOG.md to track changes
+- Standardized issue and PR templates
+- CODEOWNERS file
 
 ### Changed
-- Initial codebase setup
-- Basic testing framework
-- Documentation structure
+- Simplified workflow documentation
+- Restructured documentation directories
 
-### Removed
-- N/A
+## [1.0.2] - 2023-06-15
+
+### Added
+- Docker publishing workflow with security scanning
+- Kyverno policies for Kubernetes
+- Support for arm64 architecture
+
+### Changed
+- Updated CI pipeline
+- Better Python dependency management
 
 ### Fixed
-- N/A
+- Security issues in Docker builds
 
-## [0.1.0] - 2025-04-18
+## [1.0.1] - 2023-03-10
+
 ### Added
-- Project setup
-- Basic tests
-- Initial documentation
+- Basic container scanning
+- Dockerfile linting
 
-[Unreleased]: https://github.com/yourusername/git-utils/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/yourusername/git-utils/compare/v0.1.0...v1.0.0
-[0.1.0]: https://github.com/yourusername/git-utils/releases/tag/v0.1.0
+### Changed
+- Improved documentation
+
+## [1.0.0] - 2023-01-20
+
+### Added
+- Initial release
+- Docker build capabilities
+- Python package functionality
+- Security scanning
+
+[Unreleased]: https://github.com/philip-walsh/devkit/compare/v1.0.3...HEAD
+[1.0.3]: https://github.com/philip-walsh/devkit/compare/v1.0.2...v1.0.3
+[1.0.2]: https://github.com/philip-walsh/devkit/compare/v1.0.1...v1.0.2
+[1.0.1]: https://github.com/philip-walsh/devkit/compare/v1.0.0...v1.0.1
+[1.0.0]: https://github.com/philip-walsh/devkit/releases/tag/v1.0.0

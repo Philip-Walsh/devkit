@@ -1,0 +1,33 @@
+# DevKit CODEOWNERS File
+# Each line defines ownership for files matching the specified pattern.
+# Order is important; the last matching pattern takes precedence.
+
+# Default owners for everything in the repo (if no other match)
+* @philip-walsh
+
+# Documentation
+/docs/ @philip-walsh
+*.md @philip-walsh
+
+# Kubernetes components
+/kubernetes/ @philip-walsh
+/kyverno-policies/ @philip-walsh
+
+# Security-related code
+/security/ @philip-walsh
+Dockerfile @philip-walsh
+.github/workflows/secure-docker-publish.yml @philip-walsh
+
+# CI/CD workflows
+/.github/workflows/ @philip-walsh
+
+# Core DevKit functionality
+/devkit/core/ @philip-walsh
+/devkit/cli/ @philip-walsh
+
+# Test files
+/tests/ @philip-walsh
+
+# Requirements and dependencies
+requirements*.txt @philip-walsh
+setup.py @philip-walsh 
