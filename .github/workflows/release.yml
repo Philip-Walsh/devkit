@@ -1,0 +1,119 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_type:
+        description: 'Type of version bump'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      custom_version:
+        description: 'Custom version (leave empty to use automated versioning)'
+        required: false
+        type: string
+      release_notes:
+        description: 'Release notes'
+        required: false
+        type: string
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+      with:
+        fetch-depth: 0
+
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.9'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+        
+    - name: Configure Git
+      run: |
+        git config --global user.name "GitHub Actions"
+        git config --global user.email "actions@github.com"
+    
+    - name: Bump Version
+      id: bump-version
+      run: |
+        if [ -n "${{ github.event.inputs.custom_version }}" ]; then
+          # Use custom version
+          echo "VERSION=${{ github.event.inputs.custom_version }}" >> $GITHUB_ENV
+          devkit version set "${{ github.event.inputs.custom_version }}" --tag-message "${{ github.event.inputs.release_notes || 'Release ' }}${{ github.event.inputs.custom_version }}"
+        else
+          # Use automated version bump
+          devkit version bump ${{ github.event.inputs.version_type }} --tag-message "${{ github.event.inputs.release_notes || 'Release' }}"
+          VERSION=$(devkit version current | awk '{print $3}')
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+        fi
+    
+    - name: Extract Version Components
+      run: |
+        # Extract version components for Docker tags
+        MAJOR=$(echo $VERSION | cut -d. -f1)
+        MINOR=$(echo $VERSION | cut -d. -f2)
+        echo "MAJOR_VERSION=$MAJOR" >> $GITHUB_ENV
+        echo "MAJOR_MINOR_VERSION=$MAJOR.$MINOR" >> $GITHUB_ENV
+    
+    - name: Push Changes
+      run: |
+        git push
+        git push --tags
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v1
+    
+    - name: Login to DockerHub
+      if: github.repository == 'Philip-Walsh/devkit'  # Only run on the main repo
+      uses: docker/login-action@v1
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+    
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v1
+      with:
+        registry: ghcr.io
+        username: ${{ github.repository_owner }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Build and Push Docker Image
+      uses: docker/build-push-action@v2
+      with:
+        context: .
+        push: true
+        tags: |
+          ghcr.io/${{ github.repository }}:latest
+          ghcr.io/${{ github.repository }}:${{ env.VERSION }}
+          ghcr.io/${{ github.repository }}:${{ env.MAJOR_MINOR_VERSION }}
+          ghcr.io/${{ github.repository }}:${{ env.MAJOR_VERSION }}
+        labels: |
+          org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          org.opencontainers.image.revision=${{ github.sha }}
+          org.opencontainers.image.version=${{ env.VERSION }}
+    
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: v${{ env.VERSION }}
+        name: Release v${{ env.VERSION }}
+        body: |
+          ${{ github.event.inputs.release_notes || 'Release ' }}${{ env.VERSION }}
+        draft: false
+        prerelease: false 

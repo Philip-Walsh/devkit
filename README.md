@@ -10,6 +10,8 @@ A Python package providing development workflow automation and Git utility funct
 - CI/CD integration
 - Command-line interface
 - Development workflow automation
+- Automated versioning and releases
+- Docker image building and tagging
 
 ## Installation
 
@@ -52,7 +54,36 @@ devkit setup
 
 # Check development environment status
 devkit status
+
+# Version Management
+devkit version current                   # Show current version
+devkit version bump patch                # Bump patch version
+devkit version bump minor                # Bump minor version
+devkit version bump major                # Bump major version
+devkit version set 1.2.3                 # Set specific version
+
+# Docker Image Management
+devkit docker build                      # Build Docker image with current version
+devkit docker tag image-name registry/repo  # Tag Docker image with semantic versions
+devkit docker release --push             # Build, tag, and push Docker image
 ```
+
+### Automated Release Workflow
+
+This project includes a GitHub Actions workflow for automating releases:
+
+1. Automatically bumps version (patch, minor, or major)
+2. Creates Git tags with proper naming
+3. Builds Docker images with semantic versioning tags
+4. Pushes Docker images to container registries
+5. Creates GitHub releases with release notes
+
+To create a release:
+1. Go to the Actions tab in your GitHub repository
+2. Select the "Release" workflow
+3. Click "Run workflow"
+4. Choose the version bump type and optionally add release notes
+5. Click "Run workflow" to start the release process
 
 ### Python API
 
