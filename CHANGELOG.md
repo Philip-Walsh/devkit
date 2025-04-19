@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.6] - 2023-09-20
+
+### Changed
+- Reorganized GitHub Actions workflows for better maintainability
+- Split monolithic workflow into focused, smaller workflows
+- Optimized CI/CD pipeline for GitHub Free tier
+
+### Added
+- Dedicated PR verification workflow
+- Simplified release workflow
+- Main branch integration workflow
+- Disabled but configurable security scanning workflow
+- Disabled but configurable scheduled maintenance workflow
+
 ## [1.0.5] - 2023-09-15
 
 ### Added
@@ -76,7 +90,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Python package functionality
 - Security scanning
 
-[Unreleased]: https://github.com/philip-walsh/devkit/compare/v1.0.5...HEAD
+[Unreleased]: https://github.com/philip-walsh/devkit/compare/v1.0.6...HEAD
+[1.0.6]: https://github.com/philip-walsh/devkit/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/philip-walsh/devkit/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/philip-walsh/devkit/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/philip-walsh/devkit/compare/v1.0.2...v1.0.3
