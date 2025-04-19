@@ -1,0 +1,191 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-container-security
+  annotations:
+    policies.kyverno.io/title: Container Security Policy
+    policies.kyverno.io/category: Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      This policy enforces security best practices for containers, including
+      running as non-root, dropping capabilities, and setting resource limits.
+spec:
+  validationFailureAction: enforce
+  background: true
+  rules:
+    - name: disallow-privileged-containers
+      match:
+        resources:
+          kinds:
+            - Pod
+      validate:
+        message: "Privileged containers are not allowed. Set securityContext.privileged to false."
+        pattern:
+          spec:
+            containers:
+              - name: "*"
+                securityContext:
+                  privileged: false
+
+    - name: require-non-root-user
+      match:
+        resources:
+          kinds:
+            - Pod
+      validate:
+        message: "Running as root is not allowed. Set runAsNonRoot to true and runAsUser > 1000."
+        pattern:
+          spec:
+            containers:
+              - name: "*"
+                securityContext:
+                  runAsNonRoot: true
+                  runAsUser: ">1000"
+    
+    - name: disallow-hostpath-volumes
+      match:
+        resources:
+          kinds:
+            - Pod
+      validate:
+        message: "HostPath volumes are not allowed. Use persistent volumes instead."
+        pattern:
+          spec:
+            =(volumes):
+              - =(hostPath): null
+
+    - name: require-resource-limits
+      match:
+        resources:
+          kinds:
+            - Pod
+      validate:
+        message: "Resource limits are required for CPU and memory."
+        pattern:
+          spec:
+            containers:
+              - name: "*"
+                resources:
+                  limits:
+                    memory: "?*"
+                    cpu: "?*"
+                  requests:
+                    memory: "?*"
+                    cpu: "?*"
+
+    - name: disallow-latest-tag
+      match:
+        resources:
+          kinds:
+            - Pod
+      validate:
+        message: "Using the 'latest' tag is not allowed. Specify a fixed version tag."
+        pattern:
+          spec:
+            containers:
+              - name: "*"
+                image: "!*:latest"
+
+    # New rules for full least privilege principles
+    - name: require-drop-all-capabilities
+      match:
+        resources:
+          kinds:
+            - Pod
+      validate:
+        message: "All capabilities must be dropped by default."
+        pattern:
+          spec:
+            containers:
+              - name: "*"
+                securityContext:
+                  capabilities:
+                    drop: ["ALL"]
+    
+    - name: restrict-seccomp-profile
+      match:
+        resources:
+          kinds:
+            - Pod
+      validate:
+        message: "A seccomp profile must be specified (RuntimeDefault or Localhost)."
+        pattern:
+          spec:
+            containers:
+              - name: "*"
+                securityContext:
+                  seccompProfile:
+                    type: "RuntimeDefault | Localhost"
+    
+    - name: require-read-only-root-filesystem
+      match:
+        resources:
+          kinds:
+            - Pod
+      validate:
+        message: "Root filesystem must be read-only."
+        pattern:
+          spec:
+            containers:
+              - name: "*"
+                securityContext:
+                  readOnlyRootFilesystem: true
+    
+    - name: require-health-checks
+      match:
+        resources:
+          kinds:
+            - Pod
+      validate:
+        message: "Container must define liveness and readiness probes."
+        pattern:
+          spec:
+            containers:
+              - name: "*"
+                livenessProbe:
+                  {}
+                readinessProbe:
+                  {}
+                
+    - name: restrict-proc-mount
+      match:
+        resources:
+          kinds:
+            - Pod
+      validate:
+        message: "Default proc mount must be used."
+        pattern:
+          spec:
+            containers:
+              - name: "*"
+                securityContext:
+                  =(procMount): "Default"
+
+    - name: disallow-host-namespace
+      match:
+        resources:
+          kinds:
+            - Pod
+      validate:
+        message: "Host namespaces (PID, IPC, Network) are not allowed."
+        pattern:
+          spec:
+            =(hostPID): "false"
+            =(hostIPC): "false"
+            =(hostNetwork): "false"
+    
+    - name: limit-capabilities-add
+      match:
+        resources:
+          kinds:
+            - Pod
+      validate:
+        message: "Adding capabilities is restricted. Only approved capabilities are allowed."
+        pattern:
+          spec:
+            containers:
+              - name: "*"
+                securityContext:
+                  capabilities:
+                    =(add): ["NET_BIND_SERVICE"] | [] 

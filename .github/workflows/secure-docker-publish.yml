@@ -1,0 +1,458 @@
+name: Secure Docker Build & Publish
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      version_bump:
+        description: 'Version bump type'
+        required: true
+        default: 'patch'
+        type: 'choice'
+        options:
+          - patch
+          - minor
+          - major
+      custom_version:
+        description: 'Custom version (leave empty to use version bump)'
+        required: false
+      image_platforms:
+        description: 'Target platforms (comma-separated, e.g., linux/amd64,linux/arm64)'
+        required: false
+        default: 'linux/amd64'
+      run_tests:
+        description: 'Run tests'
+        required: false
+        default: true
+        type: boolean
+      skip_scan:
+        description: 'Skip vulnerability scan'
+        required: false
+        default: false
+        type: boolean
+      push_image:
+        description: 'Push to registry'
+        required: false
+        default: true
+        type: boolean
+
+env:
+  # Use native BuildKit implementation
+  DOCKER_BUILDKIT: 1
+  # Disable pass-through of host variables to build
+  DOCKER_CONTENT_TRUST: 1
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      build_date: ${{ steps.version.outputs.build_date }}
+      vcs_ref: ${{ steps.version.outputs.vcs_ref }}
+      matrix: ${{ steps.platforms.outputs.matrix }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ -n "${{ github.event.inputs.custom_version }}" ]; then
+            VERSION="${{ github.event.inputs.custom_version }}"
+          elif [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            # Use version bump from workflow dispatch
+            CURRENT_VERSION=$(grep version setup.py | cut -d'"' -f2 || echo "0.0.0")
+            BUMP_TYPE="${{ github.event.inputs.version_bump }}"
+            VERSION=$(python -c "import semver; print(semver.bump_$BUMP_TYPE('$CURRENT_VERSION'))")
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            # Use the tag
+            VERSION="${{ github.ref_name }}"
+            VERSION="${VERSION#v}"
+          else
+            # Use current version from setup.py
+            VERSION=$(grep version setup.py | cut -d'"' -f2 || echo "0.0.0")
+          fi
+          
+          BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          VCS_REF=$(git rev-parse --short HEAD)
+          
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "build_date=${BUILD_DATE}" >> $GITHUB_OUTPUT
+          echo "vcs_ref=${VCS_REF}" >> $GITHUB_OUTPUT
+          echo "Using version: ${VERSION}"
+
+      - name: Determine build platforms
+        id: platforms
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            PLATFORMS="${{ github.event.inputs.image_platforms }}"
+          else
+            PLATFORMS="linux/amd64"
+          fi
+          
+          # Create matrix for build platforms
+          echo "matrix={\"platform\":[$(echo "$PLATFORMS" | sed 's/,/","/g' | sed 's/^/"/' | sed 's/$/"/')],\"include\":[]}" >> $GITHUB_OUTPUT
+          echo "Building for platforms: ${PLATFORMS}"
+
+  security-checks:
+    runs-on: ubuntu-latest
+    needs: prepare
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Install Kyverno CLI
+        run: |
+          curl -LO https://github.com/kyverno/kyverno/releases/download/v1.9.0/kyverno-cli_v1.9.0_linux_x86_64.tar.gz
+          tar -xvf kyverno-cli_v1.9.0_linux_x86_64.tar.gz
+          chmod +x kyverno
+          sudo mv kyverno /usr/local/bin/
+      
+      - name: Validate Kubernetes manifests against policies
+        run: |
+          if [ -d "kubernetes" ] && [ -d "kyverno-policies" ]; then
+            for manifest in kubernetes/*.yaml; do
+              echo "Validating $manifest against Kyverno policies..."
+              kyverno apply kyverno-policies/secure-container-policy.yaml --resource=$manifest || echo "Policy validation failed for $manifest"
+            done
+          else
+            echo "No Kubernetes manifests or Kyverno policies found, skipping validation"
+          fi
+
+      - name: Dockerfile lint
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
+          failure-threshold: error
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+          cache: 'pip'
+
+      - name: Install pip-audit
+        run: |
+          python -m pip install --upgrade pip
+          pip install pip-audit
+
+      - name: Scan Python dependencies for vulnerabilities
+        id: pip_audit
+        run: |
+          echo "Scanning Python dependencies for vulnerabilities..."
+          
+          # Generate a full requirements file from setup.py if requirements.txt doesn't exist
+          if [ ! -f "requirements.txt" ] && [ -f "setup.py" ]; then
+            pip install -e . --no-deps
+            pip freeze > generated-requirements.txt
+            REQUIREMENTS_FILE="generated-requirements.txt"
+          else
+            REQUIREMENTS_FILE="requirements.txt"
+          fi
+          
+          # Run pip-audit and capture the output and exit code
+          pip-audit -r $REQUIREMENTS_FILE -f json > pip-audit-results.json || AUDIT_EXIT_CODE=$?
+          
+          # Count the number of vulnerabilities
+          VULN_COUNT=$(jq '.vulnerabilities | length' pip-audit-results.json)
+          echo "Found $VULN_COUNT vulnerable Python dependencies"
+          
+          # Save the count to outputs
+          echo "vuln_count=${VULN_COUNT}" >> $GITHUB_OUTPUT
+          
+          # Generate a human-readable report
+          echo "## Python Dependency Vulnerabilities" > pip-audit-report.md
+          echo "" >> pip-audit-report.md
+          
+          if [ "$VULN_COUNT" -gt 0 ]; then
+            echo "⚠️ Found $VULN_COUNT vulnerable dependencies" >> pip-audit-report.md
+            echo "" >> pip-audit-report.md
+            echo "| Package | Vulnerability | Fixed In |" >> pip-audit-report.md
+            echo "|---------|---------------|----------|" >> pip-audit-report.md
+            
+            jq -r '.vulnerabilities[] | "| \(.name) \(.version) | \(.vulnerability_id) | \(.fix_versions[0] // "No fix available") |"' pip-audit-results.json >> pip-audit-report.md
+          else
+            echo "✅ No vulnerable dependencies found" >> pip-audit-report.md
+          fi
+          
+          cat pip-audit-report.md
+          
+          # Only fail on critical vulnerabilities in production builds
+          if [ "$VULN_COUNT" -gt 0 ] && [ "${{ github.ref }}" = "refs/heads/main" -o "${{ startsWith(github.ref, 'refs/tags/v') }}" = "true" ]; then
+            echo "::error::Vulnerable Python dependencies found in production build - failing"
+            exit 1
+          fi
+
+      - name: Upload dependency scan results
+        uses: actions/upload-artifact@v3
+        with:
+          name: python-dependency-scan
+          path: |
+            pip-audit-results.json
+            pip-audit-report.md
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [prepare, security-checks]
+    strategy:
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Build image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: ${{ matrix.platform }}
+          load: true
+          tags: devkit-test:${{ needs.prepare.outputs.version }}-${{ matrix.platform }}
+          build-args: |
+            VERSION=${{ needs.prepare.outputs.version }}
+            BUILD_DATE=${{ needs.prepare.outputs.build_date }}
+            VCS_REF=${{ needs.prepare.outputs.vcs_ref }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          push: false
+
+      - name: Test image
+        if: ${{ github.event.inputs.run_tests != 'false' }}
+        run: |
+          # Remove slash and replace with hyphen for Docker tag compatibility
+          SAFE_PLATFORM=$(echo "${{ matrix.platform }}" | tr '/' '-')
+          docker run --rm --platform ${{ matrix.platform }} devkit-test:${{ needs.prepare.outputs.version }}-${SAFE_PLATFORM} version current
+          docker run --rm --platform ${{ matrix.platform }} devkit-test:${{ needs.prepare.outputs.version }}-${SAFE_PLATFORM} --help
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: devkit-test:${{ needs.prepare.outputs.version }}-${{ matrix.platform }}
+          format: spdx-json
+          output-file: sbom-${{ matrix.platform }}.spdx.json
+
+      - name: Scan for vulnerabilities
+        if: ${{ github.event.inputs.skip_scan != 'true' }}
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: devkit-test:${{ needs.prepare.outputs.version }}-${{ matrix.platform }}
+          format: 'sarif'
+          output: trivy-results-${{ matrix.platform }}.sarif
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'  # Don't fail yet, we'll analyze the results
+
+      - name: Upload scan results
+        if: ${{ github.event.inputs.skip_scan != 'true' }}
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: trivy-results-${{ matrix.platform }}.sarif
+
+      - name: Save artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: build-artifacts-${{ matrix.platform }}
+          path: |
+            sbom-${{ matrix.platform }}.spdx.json
+            trivy-results-${{ matrix.platform }}.sarif
+
+  analyze:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.skip_scan != 'true' }}
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
+        
+      - name: Analyze security scan results
+        id: security_analysis
+        run: |
+          CRITICAL_COUNT=0
+          HIGH_COUNT=0
+          
+          for platform_results in build-artifacts-*/trivy-results-*.sarif; do
+            if [ -f "$platform_results" ]; then
+              PLATFORM_CRITICAL=$(grep -c "CRITICAL" "$platform_results" || echo "0")
+              PLATFORM_HIGH=$(grep -c "HIGH" "$platform_results" || echo "0")
+              
+              CRITICAL_COUNT=$((CRITICAL_COUNT + PLATFORM_CRITICAL))
+              HIGH_COUNT=$((HIGH_COUNT + PLATFORM_HIGH))
+              
+              echo "Found $PLATFORM_CRITICAL critical and $PLATFORM_HIGH high vulnerabilities in $platform_results"
+            fi
+          done
+          
+          echo "Total vulnerabilities: $CRITICAL_COUNT critical, $HIGH_COUNT high"
+          echo "critical_count=${CRITICAL_COUNT}" >> $GITHUB_OUTPUT
+          echo "high_count=${HIGH_COUNT}" >> $GITHUB_OUTPUT
+          
+          if [ "$CRITICAL_COUNT" -gt "0" ]; then
+            echo "::warning::Found ${CRITICAL_COUNT} critical vulnerabilities!"
+          fi
+          
+          # Only fail on critical vulnerabilities in production builds from main or tags
+          if [ "$CRITICAL_COUNT" -gt "0" ] && [ "${{ github.ref }}" = "refs/heads/main" -o "${{ startsWith(github.ref, 'refs/tags/v') }}" = "true" ]; then
+            echo "::error::Critical vulnerabilities found in production build - failing"
+            exit 1
+          fi
+
+  publish:
+    needs: [prepare, build, analyze]
+    if: |
+      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))) ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.push_image == 'true')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write # for keyless signing
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ needs.prepare.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.prepare.outputs.version }}
+            type=semver,pattern={{major}},value=${{ needs.prepare.outputs.version }}
+            type=raw,value=${{ needs.prepare.outputs.version }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
+            type=raw,value=secure,enable=${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
+            type=raw,value=v${{ needs.prepare.outputs.version }}
+            type=raw,value=${{ needs.prepare.outputs.version }}-chainguard
+            type=sha
+
+      - name: Build and push
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          platforms: ${{ join(fromJson(needs.prepare.outputs.matrix).platform) }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ needs.prepare.outputs.version }}
+            BUILD_DATE=${{ needs.prepare.outputs.build_date }}
+            VCS_REF=${{ needs.prepare.outputs.vcs_ref }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true # generates provenance attestation
+          sbom: true # generates SBOM attestation
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.1.1
+
+      - name: Sign images
+        env:
+          COSIGN_EXPERIMENTAL: 1
+        run: |
+          # Sign all the tags we pushed
+          tags="${{ steps.meta.outputs.tags }}"
+          for tag in $tags; do
+            cosign sign --yes "$tag"
+            echo "✅ Signed $tag"
+          done
+
+  github-release:
+    needs: [prepare, publish]
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
+      
+      - name: Generate Release Notes
+        id: release_notes
+        run: |
+          VERSION="${{ needs.prepare.outputs.version }}"
+          PREVIOUS_VERSION=$(git tag -l "v*" | grep -v "$VERSION" | sort -V | tail -n 1 || echo "")
+          
+          if [ -n "$PREVIOUS_VERSION" ]; then
+            echo "Generating release notes for changes since $PREVIOUS_VERSION"
+            CHANGES=$(git log --pretty=format:"* %s" ${PREVIOUS_VERSION}..HEAD)
+          else
+            echo "No previous version found, including all commits"
+            CHANGES=$(git log --pretty=format:"* %s")
+          fi
+          
+          # Check if we have Python dependency scan results
+          PYTHON_DEPS_REPORT=""
+          if [ -f "python-dependency-scan/pip-audit-report.md" ]; then
+            PYTHON_DEPS_REPORT=$(cat python-dependency-scan/pip-audit-report.md)
+          fi
+          
+          # Create release notes with properly escaped newlines
+          {
+            echo "## DevKit v${VERSION}"
+            echo ""
+            echo "### Changes"
+            echo ""
+            echo "$CHANGES"
+            echo ""
+            
+            if [ -n "$PYTHON_DEPS_REPORT" ]; then
+              echo "### Security Scans"
+              echo ""
+              echo "$PYTHON_DEPS_REPORT"
+              echo ""
+            fi
+            
+            echo "### Docker Images"
+            echo ""
+            echo "```bash"
+            echo "# Pull the image"
+            echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}"
+            echo ""
+            echo "# Verify signature"
+            echo "cosign verify ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${VERSION}"
+            echo "```"
+          } > release_notes.md
+          
+          cat release_notes.md
+      
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ needs.prepare.outputs.version }}
+          name: DevKit v${{ needs.prepare.outputs.version }}
+          body_path: release_notes.md
+          draft: false
+          prerelease: false 

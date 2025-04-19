@@ -25,11 +25,17 @@ try:
         DockerError,
         build_docker_image,
         check_docker_installed,
+        check_kyverno_policy,
+        check_tool_installed,
         generate_docker_tags,
+        generate_sbom,
         push_docker_image,
         scan_docker_image,
+        secure_pipeline,
+        sign_image,
         tag_docker_image,
         test_docker_image,
+        verify_image_signature,
     )
     DOCKER_AVAILABLE = True
 except ImportError:
@@ -202,72 +208,83 @@ def push(target_branch):
 @cli.command()
 def format():
     """Format all code files"""
-    click.echo("Formatting JavaScript/TypeScript files...")
-    success, _ = run_command(["npm", "run", "format:all"])
-    if not success:
-        sys.exit(1)
+    commands = [
+        # Python formatting
+        ["black", "."],
+        ["isort", "."],
+        ["ruff", "check", ".", "--fix"],
+        # JS/TS formatting if npm exists
+        ["npm", "run", "format:all"]
+    ]
 
-    click.echo("Formatting Python files...")
-    commands = [["black", "."], ["isort", "."],
-                ["ruff", "check", ".", "--fix"]]
     for cmd in commands:
-        success, _ = run_command(cmd)
+        click.echo(f"Running: {' '.join(cmd)}")
+        success, _ = run_command(cmd, capture_output=False)
         if not success:
+            click.echo(f"❌ Formatting failed: {' '.join(cmd)}")
             sys.exit(1)
 
-    click.echo("✅ Formatting complete!")
+    click.echo("✅ All code formatting completed!")
 
 
 @cli.command()
 def setup():
     """Setup development environment"""
-    click.echo("Installing npm dependencies...")
-    success, _ = run_command(["npm", "install"])
+    # Create virtual environment
+    click.echo("Creating Python virtual environment...")
+    success, _ = run_command(["python", "-m", "venv", ".venv"])
     if not success:
+        click.echo("❌ Failed to create virtual environment")
         sys.exit(1)
 
+    # Install Python dependencies
     click.echo("Installing Python dependencies...")
-    commands = [
-        ["pip", "install", "-e", "."],
-        ["pip", "install", "black", "isort", "ruff"],
-    ]
-    for cmd in commands:
-        success, _ = run_command(cmd)
+    pip_cmd = [".venv/bin/pip", "install", "-e", ".", "-r", "requirements.txt"]
+    success, _ = run_command(pip_cmd)
+    if not success:
+        click.echo("❌ Failed to install Python dependencies")
+        sys.exit(1)
+
+    # Try to install npm dependencies if package.json exists
+    if Path("package.json").exists():
+        click.echo("Installing npm dependencies...")
+        success, _ = run_command(["npm", "install"])
         if not success:
+            click.echo("❌ Failed to install npm dependencies")
             sys.exit(1)
 
-    click.echo("Setting up git hooks...")
-    success, _ = run_command(["npx", "husky", "install"])
-    if not success:
-        sys.exit(1)
-
-    click.echo("✅ Setup complete!")
+    click.echo("✅ Development environment setup complete!")
+    click.echo("Activate the virtual environment with 'source .venv/bin/activate'")
 
 
 @cli.command()
 def status():
     """Check development environment status"""
-    all_good = True
+    # Check Git status
+    click.echo("📊 Git Status:")
+    run_command(["git", "status"], capture_output=False)
 
-    click.echo("Checking npm dependencies...")
-    success, _ = run_command(["npm", "list", "--depth=0"])
-    if not success:
-        all_good = False
+    # Check Python version
+    click.echo("\n📊 Python Version:")
+    run_command(["python", "--version"], capture_output=False)
 
-    click.echo("\nChecking Python dependencies...")
-    success, _ = run_command(["pip", "list"])
-    if not success:
-        all_good = False
-
-    click.echo("\nChecking git hooks...")
-    if Path(".husky").exists():
-        click.echo("✅ Git hooks are installed")
+    # Check if virtual environment exists
+    venv_path = Path(".venv")
+    if venv_path.exists():
+        click.echo("✅ Virtual environment found")
     else:
-        click.echo("❌ Git hooks are not installed")
-        all_good = False
+        click.echo("❌ Virtual environment not found")
 
-    if not all_good:
-        sys.exit(1)
+    # Check if npm is installed
+    try:
+        click.echo("\n📊 Node.js Status:")
+        run_command(["npm", "--version"], capture_output=False)
+        if Path("package.json").exists():
+            click.echo("✅ package.json found")
+        else:
+            click.echo("❌ package.json not found")
+    except:
+        click.echo("❌ npm not installed")
 
 
 @cli.group()
@@ -278,7 +295,7 @@ def version():
 
 @version.command()
 def current():
-    """Get current version"""
+    """Show current version"""
     version = get_current_version()
     click.echo(f"Current version: {version}")
 
@@ -291,42 +308,46 @@ def current():
 @click.option("--push", is_flag=True, help="Push tag to remote repository")
 def bump(version_type, no_commit, no_tag, tag_message, push):
     """Bump version (major, minor, patch)"""
+    # Convert version_type to enum
+    bump_type = VersionBump[version_type.upper()]
+
     # Get current version
     current_version = get_current_version()
     click.echo(f"Current version: {current_version}")
 
-    # Map to enum
-    bump_type = VersionBump(version_type)
-
-    # Calculate new version
+    # Bump version
     new_version = bump_version(current_version, bump_type)
     click.echo(f"New version: {new_version}")
 
     # Update version in files
-    if not update_version_in_files(new_version):
-        click.echo("❌ Failed to update version in files")
-        sys.exit(1)
+    update_version_in_files(new_version)
+    click.echo("✅ Updated version in files")
 
-    # Commit changes
+    # Create commit
     if not no_commit:
-        if not commit_version_change(new_version, bump_type):
-            click.echo("❌ Failed to commit version change")
+        commit_message = f"chore: bump version to {new_version}"
+        if not commit_version_change(commit_message):
+            click.echo("❌ Failed to create version commit")
             sys.exit(1)
-        click.echo("✅ Version change committed")
+        click.echo(f"✅ Created version commit")
 
-    # Create git tag
+    # Create tag
     if not no_tag:
-        if not create_git_tag(new_version, tag_message):
+        tag_name = f"v{new_version}"
+        if not tag_message:
+            tag_message = f"Version {new_version}"
+
+        if not create_git_tag(tag_name, tag_message):
             click.echo("❌ Failed to create git tag")
             sys.exit(1)
-        click.echo(f"✅ Created tag v{new_version}")
+        click.echo(f"✅ Created git tag {tag_name}")
 
-        # Push tag
+        # Push tag if requested
         if push:
-            if not push_git_tag(new_version):
+            if not push_git_tag(tag_name):
                 click.echo("❌ Failed to push git tag")
                 sys.exit(1)
-            click.echo(f"✅ Pushed tag v{new_version}")
+            click.echo(f"✅ Pushed tag {tag_name}")
 
     click.echo(f"✅ Version bumped to {new_version}")
 
@@ -336,36 +357,39 @@ def bump(version_type, no_commit, no_tag, tag_message, push):
 @click.option("--tag-message", help="Custom tag message")
 @click.option("--push", is_flag=True, help="Push tag to remote repository")
 def set(version, tag_message, push):
-    """Set version to specific value"""
+    """Set specific version"""
+    # Validate version format
+    if not version.replace(".", "").isdigit():
+        click.echo(
+            "❌ Invalid version format. Use semantic versioning (e.g., 1.2.3)")
+        sys.exit(1)
+
     # Get current version
     current_version = get_current_version()
     click.echo(f"Current version: {current_version}")
 
     # Update version in files
-    if not update_version_in_files(version):
-        click.echo("❌ Failed to update version in files")
+    update_version_in_files(version)
+    click.echo("✅ Updated version in files")
+
+    # Create commit
+    commit_message = f"chore: set version to {version}"
+    if not commit_version_change(commit_message):
+        click.echo("❌ Failed to create version commit")
         sys.exit(1)
+    click.echo(f"✅ Created version commit")
 
-    # Commit changes
-    try:
-        # Stage the files
-        subprocess.run(
-            ["git", "add", "devkit/__init__.py", "setup.py"], check=True)
+    # Create tag
+    tag_name = f"v{version}"
+    if not tag_message:
+        tag_message = f"Version {version}"
 
-        # Create commit with conventional message
-        message = f"chore(release): set version to {version}"
-        subprocess.run(["git", "commit", "-m", message], check=True)
-        click.echo("✅ Version change committed")
-    except subprocess.CalledProcessError:
-        click.echo("❌ Failed to commit version change")
-
-    # Create git tag
-    if not create_git_tag(version, tag_message):
+    if not create_git_tag(tag_name, tag_message):
         click.echo("❌ Failed to create git tag")
         sys.exit(1)
-    click.echo(f"✅ Created tag v{version}")
+    click.echo(f"✅ Created git tag {tag_name}")
 
-    # Push tag
+    # Push tag if requested
     if push:
         if not push_git_tag(version):
             click.echo("❌ Failed to push git tag")
@@ -571,14 +595,12 @@ def test(image_name, command):
             test_cmd = command.split()
 
         success, output = test_docker_image(image_name, test_cmd)
-
         if not success:
-            click.echo(f"❌ Test failed: {output}")
+            click.echo(f"❌ Docker image test failed: {output}")
             sys.exit(1)
 
-        click.echo("✅ Test passed")
+        click.echo(f"✅ Docker image test passed")
         click.echo(output)
-
     except DockerError as e:
         click.echo(f"❌ {e}")
         sys.exit(1)
@@ -591,30 +613,235 @@ def test(image_name, command):
 def scan(image_name, output):
     """Scan a Docker image for vulnerabilities"""
     try:
-        click.echo(f"🔍 Scanning Docker image {image_name}...")
+        click.echo(
+            f"🔍 Scanning Docker image {image_name} for vulnerabilities...")
 
-        success, result = scan_docker_image(image_name)
+        success, scan_results = scan_docker_image(
+            image_name, output_format=output)
 
         if output == "json":
-            click.echo(json.dumps(result, indent=2))
+            # For JSON output, print the formatted result
+            click.echo(json.dumps(scan_results, indent=2))
         else:
-            if "error" in result:
-                click.echo(f"❌ Scan failed: {result['error']}")
-                sys.exit(1)
+            # For text output, just print the result directly
+            click.echo(scan_results)
 
-            click.echo(
-                f"Critical vulnerabilities: {'Yes' if result['has_critical'] else 'No'}")
-            click.echo(
-                f"High vulnerabilities: {'Yes' if result['has_high'] else 'No'}")
-
+        # Exit with appropriate code
         if not success:
-            click.echo("❌ Security issues found in the image")
+            click.echo("❌ Critical vulnerabilities found!")
             sys.exit(1)
-
-        click.echo("✅ Scan completed successfully")
-
+        else:
+            click.echo("✅ No critical vulnerabilities found")
     except DockerError as e:
         click.echo(f"❌ {e}")
+        sys.exit(1)
+
+
+@docker.command()
+@click.argument("image_name")
+@click.option("--output-file", "-o", help="Output file path for SBOM")
+@click.option("--format", "-f", default="spdx-json",
+              type=click.Choice(["spdx-json", "cyclonedx-json"]),
+              help="SBOM format")
+def sbom(image_name, output_file, format):
+    """Generate SBOM for a Docker image"""
+    try:
+        click.echo(f"📄 Generating SBOM for {image_name}...")
+
+        success, output = generate_sbom(image_name, output_file, format)
+
+        if not success:
+            click.echo(f"❌ SBOM generation failed: {output}")
+            sys.exit(1)
+
+        click.echo(f"✅ SBOM generated: {output}")
+    except Exception as e:
+        click.echo(f"❌ Error generating SBOM: {e}")
+        sys.exit(1)
+
+
+@docker.command()
+@click.argument("image_name")
+@click.option("--key", "-k", help="Path to Cosign private key")
+def sign(image_name, key):
+    """Sign a Docker image with Cosign"""
+    try:
+        click.echo(f"🔏 Signing image {image_name}...")
+
+        success, output = sign_image(image_name, key)
+
+        if not success:
+            click.echo(f"❌ Image signing failed: {output}")
+            sys.exit(1)
+
+        click.echo(f"✅ Image signed successfully")
+    except Exception as e:
+        click.echo(f"❌ Error signing image: {e}")
+        sys.exit(1)
+
+
+@docker.command()
+@click.argument("image_name")
+@click.option("--key", "-k", help="Path to Cosign public key")
+def verify(image_name, key):
+    """Verify a Docker image signature"""
+    try:
+        click.echo(f"🔍 Verifying signature for {image_name}...")
+
+        success, output = verify_image_signature(image_name, key)
+
+        if not success:
+            click.echo(f"❌ Signature verification failed: {output}")
+            sys.exit(1)
+
+        click.echo(f"✅ Signature verified successfully")
+        click.echo(output)
+    except Exception as e:
+        click.echo(f"❌ Error verifying signature: {e}")
+        sys.exit(1)
+
+
+@docker.command()
+@click.option("--dockerfile", default="Dockerfile", help="Path to Dockerfile")
+@click.option("--context", default=".", help="Path to build context")
+@click.option("--name", help="Name for the image (default: project name)")
+@click.option("--registry", help="Container registry path (e.g., username/repo)")
+@click.option("--build-args", help="Build arguments (key=value,key2=value2)")
+@click.option("--policy", "-p", multiple=True, help="Path(s) to Kyverno policy file(s)")
+@click.option("--k8s-manifest", help="Path to Kubernetes manifest to check")
+@click.option("--signing-key", help="Path to Cosign signing key")
+@click.option("--push", is_flag=True, help="Push to registry")
+@click.option("--json", "json_output", is_flag=True, help="Output results as JSON")
+def secure(dockerfile, context, name, registry, build_args, policy, k8s_manifest, signing_key, push, json_output):
+    """Run a complete secure delivery pipeline"""
+    try:
+        # Parse build args if provided
+        build_args_dict = {}
+        if build_args:
+            for arg_pair in build_args.split(","):
+                key, value = arg_pair.split("=", 1)
+                build_args_dict[key] = value
+
+        # Generate name if not provided
+        if not name:
+            project_name = Path.cwd().name
+            version = get_current_version()
+            name = f"{project_name}:{version}"
+
+        # Convert policy list to None if empty
+        policy_files = list(policy) if policy else None
+
+        click.echo("🔒 Running secure delivery pipeline...")
+
+        # Run the secure pipeline
+        results = secure_pipeline(
+            dockerfile_path=dockerfile,
+            context_path=context,
+            image_name=name,
+            registry=registry,
+            build_args=build_args_dict,
+            policy_files=policy_files,
+            k8s_manifest=k8s_manifest,
+            signing_key=signing_key,
+            push=push
+        )
+
+        # Output results
+        if json_output:
+            click.echo(json.dumps(results, indent=2))
+        else:
+            # Summary already printed by secure_pipeline function
+            pass
+
+        # Exit with error if any critical step failed
+        if not results["build"]["success"]:
+            sys.exit(1)
+        if "scan" in results and not results["scan"]["success"]:
+            sys.exit(1)
+        if "policy" in results and not results["policy"]["success"]:
+            sys.exit(1)
+
+        click.echo("✅ Secure delivery pipeline completed successfully!")
+    except Exception as e:
+        click.echo(f"❌ Secure pipeline failed: {str(e)}")
+        sys.exit(1)
+
+# Health check endpoints for Kubernetes probes
+
+
+@cli.group()
+def health():
+    """Health check commands for container health probes"""
+    pass
+
+
+@health.command()
+def live():
+    """Liveness probe endpoint"""
+    try:
+        # Check if the process is alive and responsive
+        version = get_current_version()
+        click.echo(json.dumps({
+            "status": "ok",
+            "version": version,
+            "timestamp": subprocess.check_output(["date", "-u", "+%Y-%m-%dT%H:%M:%SZ"]).decode().strip()
+        }))
+    except Exception as e:
+        click.echo(json.dumps({
+            "status": "error",
+            "error": str(e)
+        }), err=True)
+        sys.exit(1)
+
+
+@health.command()
+def ready():
+    """Readiness probe endpoint"""
+    try:
+        # Check if the application is ready to serve requests
+        # This could include checking database connectivity, etc.
+        dependencies_ok = True
+
+        # Add any additional dependency checks here
+        # Example: check database connection
+        # db_connection = check_database_connection()
+        # dependencies_ok = dependencies_ok and db_connection
+
+        if dependencies_ok:
+            click.echo(json.dumps({
+                "status": "ready",
+                "version": get_current_version(),
+                "timestamp": subprocess.check_output(["date", "-u", "+%Y-%m-%dT%H:%M:%SZ"]).decode().strip()
+            }))
+        else:
+            click.echo(json.dumps({
+                "status": "not_ready",
+                "message": "Dependencies not ready"
+            }), err=True)
+            sys.exit(1)
+    except Exception as e:
+        click.echo(json.dumps({
+            "status": "error",
+            "error": str(e)
+        }), err=True)
+        sys.exit(1)
+
+
+@health.command()
+def started():
+    """Startup probe endpoint"""
+    try:
+        # Check if the application has completed startup procedures
+        click.echo(json.dumps({
+            "status": "started",
+            "version": get_current_version(),
+            "timestamp": subprocess.check_output(["date", "-u", "+%Y-%m-%dT%H:%M:%SZ"]).decode().strip()
+        }))
+    except Exception as e:
+        click.echo(json.dumps({
+            "status": "error",
+            "error": str(e)
+        }), err=True)
         sys.exit(1)
 
 
