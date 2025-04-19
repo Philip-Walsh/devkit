@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.7] - 2024-04-30
+
+### Fixed
+- Error in `versioning.py` with `commit_version_change()` function
+- Docker testing functionality to use a valid default test command
+- Fixed the GitHub Actions release workflow
+
+### Added
+- `notify` command to support release notifications
+- Documentation for the release process with RELEASES.md
+
+### Changed
+- Streamlined Docker release process with better error handling
+- Improved local Docker registry support
+
 ## [1.0.6] - 2023-09-20
 
 ### Changed
@@ -90,7 +105,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Python package functionality
 - Security scanning
 
-[Unreleased]: https://github.com/philip-walsh/devkit/compare/v1.0.6...HEAD
+[Unreleased]: https://github.com/philip-walsh/devkit/compare/v1.0.7...HEAD
+[1.0.7]: https://github.com/philip-walsh/devkit/compare/v1.0.6...v1.0.7
 [1.0.6]: https://github.com/philip-walsh/devkit/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/philip-walsh/devkit/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/philip-walsh/devkit/compare/v1.0.3...v1.0.4
