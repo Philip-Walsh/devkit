@@ -1,0 +1,104 @@
+name: Security Scanning
+
+on:
+  # Disable this workflow initially to focus on core workflows
+  # Uncomment when ready to run security scanning
+  workflow_dispatch:
+    inputs:
+      image:
+        description: 'Image to scan (e.g., ghcr.io/username/image:tag)'
+        required: true
+      severity:
+        description: 'Vulnerability severity to report'
+        required: true
+        default: 'CRITICAL,HIGH'
+        type: 'choice'
+        options:
+          - 'CRITICAL,HIGH'
+          - 'CRITICAL,HIGH,MEDIUM'
+          - 'CRITICAL,HIGH,MEDIUM,LOW'
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - 'Dockerfile'
+  #     - 'requirements.txt'
+  #     - 'setup.py'
+
+jobs:
+  scan-dependencies:
+    name: Scan Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+          cache: 'pip'
+
+      - name: Scan Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pip-audit
+          
+          # Generate requirements if needed
+          if [ ! -f "requirements.txt" ] && [ -f "setup.py" ]; then
+            pip install -e . --no-deps
+            pip freeze > generated-requirements.txt
+            REQUIREMENTS_FILE="generated-requirements.txt"
+          else
+            REQUIREMENTS_FILE="requirements.txt"
+          fi
+          
+          # Run scan and output results
+          echo "### Python Dependency Scan Results" > scan-results.md
+          echo "" >> scan-results.md
+          pip-audit -r $REQUIREMENTS_FILE -f markdown >> scan-results.md || true
+          cat scan-results.md
+
+      - name: Upload scan results
+        uses: actions/upload-artifact@v3
+        with:
+          name: dependency-scan-results
+          path: scan-results.md
+          retention-days: 7
+
+  scan-container:
+    name: Scan Container
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        
+      - name: Build image for scanning
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: false
+          load: true
+          tags: devkit-scan:latest
+        
+      - name: Scan with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: devkit-scan:latest
+          format: 'table'
+          exit-code: '0'
+          severity: ${{ github.event.inputs.severity || 'CRITICAL,HIGH' }}
+          
+      - name: Generate SBOM
+        run: |
+          # Install Syft
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+          
+          # Generate SBOM
+          syft devkit-scan:latest -o json > sbom.json
+          
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v3
+        with:
+          name: sbom
+          path: sbom.json
+          retention-days: 7 

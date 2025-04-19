@@ -1,53 +1,62 @@
-# DevKit Workflows
+# DevKit GitHub Workflows
 
-## Available Workflows
+This directory contains the GitHub Actions workflows for DevKit, organized by their primary purpose.
 
-### `secure-docker-publish.yml`
+## Active Workflows
 
-Builds and publishes Docker images with security checks.
+### ci-pr.yml
+**Purpose**: Basic verification of pull requests
+- Runs tests
+- Lints code
+- Validates Dockerfile
+- Fast and focused on quick feedback
 
-**Triggers**:
-- Push to `main`
-- Version tags (`v*`)
-- PRs to `main`
-- Manual runs
+### cd-release.yml
+**Purpose**: Release pipeline for version tags
+- Builds and publishes Docker images to GitHub Container Registry
+- Creates GitHub releases with release notes
+- Triggered by pushing version tags (v*)
 
-**Features**:
-- Multi-architecture builds
-- Security scanning
-- SBOM generation
-- Container signing
-- GitHub releases
+### ci-main.yml
+**Purpose**: Main branch integration
+- Runs when code is pushed to main
+- Builds and publishes a development image
+- Focuses on validating the integrated code
 
-### `ci.yml`
+## Disabled Workflows (Enable When Ready)
 
-Quick validation for pull requests.
+### security-scan.yml
+**Purpose**: Security scanning
+- Scans dependencies for vulnerabilities
+- Creates SBOM
+- Scans Docker images
+- Currently only triggered manually via workflow_dispatch
 
-**Triggers**:
-- Pull requests
+### scheduled-maintenance.yml
+**Purpose**: Maintenance tasks
+- Rebuilds images with latest dependencies
+- Checks for outdated dependencies
+- Disabled by default (requires enabling the cron schedule)
 
-**Features**:
-- Code linting
-- Test runs
-- Basic security checks
+## Workflow Usage
 
-## Usage
+### Development Flow
+1. Create a branch and make changes
+2. Submit a PR → `ci-pr.yml` runs
+3. Merge to main → `ci-main.yml` runs
+4. Create a version tag → `cd-release.yml` runs
 
-### Development
-PRs automatically run the CI workflow.
+### Running Security Scans
+Manually trigger the `security-scan.yml` workflow from the Actions tab. 
+Specify the image to scan and severity levels.
 
-### Releases
-Three ways to build:
-1. Merge to `main` → development image
-2. Create version tag → release image
-3. Manual trigger → custom build
+## Best Practices
+- Keep the CI workflows fast
+- Use specific dependency versions
+- Test before releasing
+- Validate security scans periodically
 
-### Manual Builds
-1. Actions tab → Secure Docker Build & Publish → Run workflow
-2. Set options
-3. Run
-
-## Improvements Needed
-- Split into smaller workflows
-- Add dependency updates
-- Add multi-version testing 
+## Future Improvements
+- Add unit testing
+- Implement matrix testing for multiple Python versions
+- Add code coverage reporting 

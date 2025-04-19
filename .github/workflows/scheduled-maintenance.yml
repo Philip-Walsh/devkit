@@ -1,0 +1,78 @@
+name: Scheduled Maintenance
+
+on:
+  # Disable this workflow initially - uncomment when ready
+  # schedule:
+  #   - cron: '0 2 * * 1'  # Run at 2 AM UTC every Monday
+  workflow_dispatch:
+    inputs:
+      full_rebuild:
+        description: 'Perform full rebuild'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  rebuild-images:
+    name: Rebuild Images
+    runs-on: ubuntu-latest
+    env:
+      REGISTRY: ghcr.io
+      IMAGE_NAME: ${{ github.repository }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Get version
+        id: version
+        run: |
+          VERSION=$(grep version setup.py | cut -d'"' -f2 || echo "latest")
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "date=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
+          echo "commit=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          
+      - name: Build and push image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
+            BUILD_DATE=${{ steps.version.outputs.date }}
+            VCS_REF=${{ steps.version.outputs.commit }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          
+  check-dependencies:
+    name: Check Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+          
+      - name: Check for outdated dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip list --outdated 
