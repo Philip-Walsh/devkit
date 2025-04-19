@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.0.3] - 2023-09-01
+## [1.0.4] - 2023-09-01
 
 ### Added
 - Improved repository structure with GitHub templates
@@ -19,6 +19,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Simplified workflow documentation
 - Restructured documentation directories
+
+### Fixed
+- Removed placeholder team references in CODEOWNERS
+- Added .gitkeep files to preserve empty directory structure
+
+## [1.0.3] - 2023-07-25
+
+### Added
+- Support for custom security policies
+- Extended CLI documentation
+
+### Fixed
+- DevKit version management commands
 
 ## [1.0.2] - 2023-06-15
 
@@ -51,7 +64,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Python package functionality
 - Security scanning
 
-[Unreleased]: https://github.com/philip-walsh/devkit/compare/v1.0.3...HEAD
+[Unreleased]: https://github.com/philip-walsh/devkit/compare/v1.0.4...HEAD
+[1.0.4]: https://github.com/philip-walsh/devkit/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/philip-walsh/devkit/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/philip-walsh/devkit/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/philip-walsh/devkit/compare/v1.0.0...v1.0.1
