@@ -1,4 +1,5 @@
-FROM cgr.dev/chainguard/python:latest
+FROM python:3.9-slim
+
 LABEL maintainer="Philip Walsh <philip.walsh@example.com>"
 LABEL org.opencontainers.image.source="https://github.com/Philip-Walsh/devkit"
 LABEL org.opencontainers.image.description="DevKit - Development workflow automation tool"
