@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -26,7 +27,9 @@ try:
         check_docker_installed,
         generate_docker_tags,
         push_docker_image,
+        scan_docker_image,
         tag_docker_image,
+        test_docker_image,
     )
     DOCKER_AVAILABLE = True
 except ImportError:
@@ -390,7 +393,8 @@ def docker():
 @click.option("--context", default=".", help="Path to build context")
 @click.option("--name", help="Name for the image (default: project name)")
 @click.option("--no-cache", is_flag=True, help="Disable Docker build cache")
-def build(dockerfile, context, name, no_cache):
+@click.option("--platform", help="Target platform (e.g., linux/amd64)")
+def build(dockerfile, context, name, no_cache, platform):
     """Build Docker image"""
     try:
         # Use project name if name not provided
@@ -405,10 +409,12 @@ def build(dockerfile, context, name, no_cache):
             dockerfile_path=dockerfile,
             context_path=context,
             image_name=name,
-            cache=not no_cache
+            cache=not no_cache,
+            platform=platform
         )
 
         click.echo(f"✅ Built Docker image: {image_name}")
+        return image_name
     except DockerError as e:
         click.echo(f"❌ {e}")
         sys.exit(1)
@@ -419,7 +425,8 @@ def build(dockerfile, context, name, no_cache):
 @click.argument("registry_path")
 @click.option("--push", is_flag=True, help="Push images to registry")
 @click.option("--no-latest", is_flag=True, help="Don't include latest tag")
-def tag(source_image, registry_path, push, no_latest):
+@click.option("--chainguard", is_flag=True, help="Include Chainguard-specific tags")
+def tag(source_image, registry_path, push, no_latest, chainguard):
     """Tag Docker image with semantic versions"""
     try:
         # Get version from the current package
@@ -429,7 +436,8 @@ def tag(source_image, registry_path, push, no_latest):
         tags = generate_docker_tags(
             registry_path,
             version,
-            include_latest=not no_latest
+            include_latest=not no_latest,
+            chainguard_tags=chainguard
         )
 
         click.echo(f"🔖 Tagging Docker image {source_image} with:")
@@ -468,7 +476,10 @@ def tag(source_image, registry_path, push, no_latest):
 @click.option("--no-cache", is_flag=True, help="Disable Docker build cache")
 @click.option("--no-latest", is_flag=True, help="Don't include latest tag")
 @click.option("--push", is_flag=True, help="Push images to registry")
-def release(dockerfile, context, registry, no_cache, no_latest, push):
+@click.option("--chainguard", is_flag=True, help="Include Chainguard-specific tags")
+@click.option("--platform", help="Target platform (e.g., linux/amd64)")
+@click.option("--test", is_flag=True, help="Test the image after building")
+def release(dockerfile, context, registry, no_cache, no_latest, push, chainguard, platform, test):
     """Build, tag and optionally push Docker image"""
     try:
         # Get version
@@ -486,16 +497,28 @@ def release(dockerfile, context, registry, no_cache, no_latest, push):
             dockerfile_path=dockerfile,
             context_path=context,
             image_name=image_name,
-            cache=not no_cache
+            cache=not no_cache,
+            platform=platform
         )
 
         click.echo(f"✅ Built Docker image: {built_image}")
+
+        # Test the image if requested
+        if test:
+            click.echo(f"🧪 Testing Docker image {built_image}...")
+            success, output = test_docker_image(built_image)
+            if not success:
+                click.echo(f"❌ Docker image test failed: {output}")
+                sys.exit(1)
+            click.echo(f"✅ Docker image test passed")
+            click.echo(output)
 
         # Generate tags
         tags = generate_docker_tags(
             registry,
             version,
-            include_latest=not no_latest
+            include_latest=not no_latest,
+            chainguard_tags=chainguard
         )
 
         # Filter out the main tag which is already built
@@ -529,6 +552,66 @@ def release(dockerfile, context, registry, no_cache, no_latest, push):
                 sys.exit(1)
 
             click.echo(f"✅ Pushed {len(pushed_images)} Docker images")
+
+    except DockerError as e:
+        click.echo(f"❌ {e}")
+        sys.exit(1)
+
+
+@docker.command()
+@click.argument("image_name")
+@click.option("--command", "-c", help="Command to run in the container")
+def test(image_name, command):
+    """Test a Docker image by running it with a command"""
+    try:
+        click.echo(f"🧪 Testing Docker image {image_name}...")
+
+        test_cmd = None
+        if command:
+            test_cmd = command.split()
+
+        success, output = test_docker_image(image_name, test_cmd)
+
+        if not success:
+            click.echo(f"❌ Test failed: {output}")
+            sys.exit(1)
+
+        click.echo("✅ Test passed")
+        click.echo(output)
+
+    except DockerError as e:
+        click.echo(f"❌ {e}")
+        sys.exit(1)
+
+
+@docker.command()
+@click.argument("image_name")
+@click.option("--output", "-o", type=click.Choice(["text", "json"]), default="text",
+              help="Output format")
+def scan(image_name, output):
+    """Scan a Docker image for vulnerabilities"""
+    try:
+        click.echo(f"🔍 Scanning Docker image {image_name}...")
+
+        success, result = scan_docker_image(image_name)
+
+        if output == "json":
+            click.echo(json.dumps(result, indent=2))
+        else:
+            if "error" in result:
+                click.echo(f"❌ Scan failed: {result['error']}")
+                sys.exit(1)
+
+            click.echo(
+                f"Critical vulnerabilities: {'Yes' if result['has_critical'] else 'No'}")
+            click.echo(
+                f"High vulnerabilities: {'Yes' if result['has_high'] else 'No'}")
+
+        if not success:
+            click.echo("❌ Security issues found in the image")
+            sys.exit(1)
+
+        click.echo("✅ Scan completed successfully")
 
     except DockerError as e:
         click.echo(f"❌ {e}")

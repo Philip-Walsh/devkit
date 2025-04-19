@@ -12,6 +12,8 @@ A Python package providing development workflow automation and Git utility funct
 - Development workflow automation
 - Automated versioning and releases
 - Docker image building and tagging
+- Chainguard secure images integration
+- Docker image testing and security scanning
 
 ## Installation
 
@@ -64,9 +66,28 @@ devkit version set 1.2.3                 # Set specific version
 
 # Docker Image Management
 devkit docker build                      # Build Docker image with current version
+devkit docker build --platform linux/amd64  # Build for specific platform
 devkit docker tag image-name registry/repo  # Tag Docker image with semantic versions
-devkit docker release --push             # Build, tag, and push Docker image
+devkit docker tag image-name registry/repo --chainguard  # Include Chainguard tags
+devkit docker test image-name            # Test that a Docker image works
+devkit docker scan image-name            # Scan for vulnerabilities
+devkit docker release --push --test --chainguard  # Build, test, tag, and push Docker image
 ```
+
+### Docker Integration
+
+DevKit provides comprehensive Docker support with Chainguard integration:
+
+1. **Secure Base Images**: Uses Chainguard's minimal, secure Python images
+2. **Automated Testing**: Tests Docker images before pushing to registries
+3. **Security Scanning**: Scans images for vulnerabilities using Trivy
+4. **Semantic Versioning**: Creates Docker tags following best practices
+5. **Chainguard Tags**: Supports Chainguard's tagging conventions
+
+Example Chainguard tags:
+- `v1.0.2` - Explicit version with "v" prefix
+- `1.0-chainguard` - Minor version with Chainguard suffix
+- `secure` - Latest secure version
 
 ### Automated Release Workflow
 
@@ -74,15 +95,17 @@ This project includes a GitHub Actions workflow for automating releases:
 
 1. Automatically bumps version (patch, minor, or major)
 2. Creates Git tags with proper naming
-3. Builds Docker images with semantic versioning tags
-4. Pushes Docker images to container registries
-5. Creates GitHub releases with release notes
+3. Tests Docker images for functionality
+4. Scans Docker images for security vulnerabilities
+5. Builds Docker images with semantic versioning tags
+6. Pushes Docker images to container registries
+7. Creates GitHub releases with release notes
 
 To create a release:
 1. Go to the Actions tab in your GitHub repository
 2. Select the "Release" workflow
 3. Click "Run workflow"
-4. Choose the version bump type and optionally add release notes
+4. Choose the version bump type, enable Chainguard support, and optionally add release notes
 5. Click "Run workflow" to start the release process
 
 ### Python API

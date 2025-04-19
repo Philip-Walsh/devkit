@@ -1,0 +1,62 @@
+name: Test Docker Build
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'Dockerfile'
+      - 'devkit/**'
+      - 'requirements.txt'
+      - '.github/workflows/test-docker.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'Dockerfile'
+      - 'devkit/**'
+      - 'requirements.txt'
+      - '.github/workflows/test-docker.yml'
+  workflow_dispatch:
+
+jobs:
+  test-docker:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v1
+    
+    - name: Build Docker image
+      uses: docker/build-push-action@v2
+      with:
+        context: .
+        push: false
+        load: true
+        tags: devkit-test:latest
+    
+    - name: Test Docker image
+      run: |
+        docker run --rm devkit-test:latest --help
+        if [ $? -ne 0 ]; then
+          echo "Docker image test failed"
+          exit 1
+        fi
+        echo "Docker image test passed"
+    
+    - name: Install Trivy
+      run: |
+        curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin v0.37.3
+    
+    - name: Scan Docker image
+      run: |
+        trivy image --exit-code 0 --severity HIGH,CRITICAL devkit-test:latest
+        
+    - name: Check if image uses Chainguard base
+      run: |
+        if docker inspect devkit-test:latest | grep -q "cgr.dev/chainguard"; then
+          echo "✅ Image uses Chainguard base image"
+        else
+          echo "⚠️ Image does not use Chainguard base image"
+        fi 
