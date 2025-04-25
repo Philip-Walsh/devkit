@@ -86,4 +86,4 @@ The CI/CD pipeline can be extended with:
 - **Custom Test Environments**: Add more test matrices for different platforms
 - **Deployment Automation**: Configure auto-deployment to cloud environments
 - **Custom Notifications**: Add Slack/Teams notifications for pipeline events
-- **Compliance Scanning**: Add additional security and compliance tools 
+- **Compliance Scanning**: Add additional security and compliance tools

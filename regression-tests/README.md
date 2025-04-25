@@ -29,7 +29,7 @@ The regression testing framework allows you to:
 # Example
 ./regression-tests/setup-private-repo.sh \
   https://github.com/Philip-Walsh/devkit.git \
-  git@github.com:yourusername/devkit-private-testing.git \
+  git@github.com:Philip-Walsh/devkit-private-testing.git \
   regression-testing
 ```
 

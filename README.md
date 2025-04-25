@@ -136,7 +136,7 @@ devkit docker secure
 ## Development
 
 ```bash
-git clone https://github.com/yourusername/devkit.git
+git clone https://github.com/Philip-Walsh/devkit.git
 cd devkit
 python -m venv venv
 source venv/bin/activate

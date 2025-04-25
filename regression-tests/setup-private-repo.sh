@@ -7,7 +7,7 @@ echo "=== Setting up Private DevKit Regression Testing Repository ==="
 
 # Configuration
 PUBLIC_REPO=${1:-"https://github.com/Philip-Walsh/devkit.git"}
-PRIVATE_REPO=${2:-"git@github.com:yourusername/devkit-private-testing.git"}
+PRIVATE_REPO=${2:-"git@github.com:yourusername/private-repository.git"}
 BRANCH_NAME=${3:-"regression-testing"}
 
 echo "Public Repository: $PUBLIC_REPO"

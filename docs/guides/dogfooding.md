@@ -14,7 +14,7 @@ This guide demonstrates how the DevKit team uses DevKit to manage itself - a sof
 
 ```bash
 # Clone the DevKit repository
-git clone https://github.com/yourusername/devkit.git
+git clone https://github.com/Philip-Walsh/devkit.git
 cd devkit
 
 # Install DevKit in development mode

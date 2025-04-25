@@ -326,7 +326,7 @@ def bump(version_type, no_commit, no_tag, tag_message, push):
     # Create commit
     if not no_commit:
         commit_message = f"chore: bump version to {new_version}"
-        if not commit_version_change(commit_message):
+        if not commit_version_change(commit_message, bump_type):
             click.echo("❌ Failed to create version commit")
             sys.exit(1)
         click.echo(f"✅ Created version commit")

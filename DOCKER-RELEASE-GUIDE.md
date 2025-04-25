@@ -49,7 +49,7 @@ python -m devkit.cli docker release --registry localhost:5000/devkit --test
 python -m devkit.cli docker release --registry yourname/devkit --test
 
 # For GitHub Container Registry
-python -m devkit.cli docker release --registry ghcr.io/yourusername/devkit --test
+python -m devkit.cli docker release --registry ghcr.io/Philip-Walsh/devkit --test
 ```
 
 ### Step 3: Push the Docker Image
@@ -66,7 +66,7 @@ python -m devkit.cli docker release --registry yourname/devkit --push
 
 # For GitHub Container Registry (requires authentication)
 echo $GITHUB_TOKEN | docker login ghcr.io -u USERNAME --password-stdin
-python -m devkit.cli docker release --registry ghcr.io/yourusername/devkit --push
+python -m devkit.cli docker release --registry ghcr.io/Philip-Walsh/devkit --push
 ```
 
 ### Step 4: Create a Git Tag
