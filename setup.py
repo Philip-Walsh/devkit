@@ -2,7 +2,7 @@ from setuptools import find_packages, setup
 
 setup(
     name="devkit",
-    version="1.0.7",
+    version="1.3.0",
     packages=find_packages(),
     include_package_data=True,
     install_requires=[
